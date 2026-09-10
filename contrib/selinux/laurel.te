@@ -83,6 +83,9 @@ nscd_use(laurel_t)
 # Read config files
 read_files_pattern(laurel_t, laurel_etc_t, laurel_etc_t)
 
+# Read the active SELinux policy for AVC reasoning.
+selinux_read_policy(laurel_t)
+
 # Write/rotate log files
 manage_dirs_pattern(laurel_t, laurel_log_t, laurel_log_t)
 manage_files_pattern(laurel_t, laurel_log_t, laurel_log_t)

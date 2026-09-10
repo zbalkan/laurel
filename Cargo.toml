@@ -15,6 +15,10 @@ categories = ["encoding"]
 [badges]
 maintenance = { status = "actively-developed" }
 
+[features]
+default = []
+selinux = ["dep:cc"]
+
 [dependencies]
 lazy_static = "1"
 getopts = "0.2"
@@ -48,6 +52,7 @@ bstr = "1.12.3"
 
 [build-dependencies]
 bindgen = ">= 0.60"
+cc = { version = "1", optional = true }
 
 [dev-dependencies]
 divan = "0.1.13"

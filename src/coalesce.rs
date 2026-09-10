@@ -19,6 +19,7 @@ use crate::hash::Sha256Writer;
 use crate::label_matcher::LabelMatcher;
 use crate::proc::{self, ContainerInfo, ProcTable, Process, ProcessKey};
 use crate::procfs;
+use crate::selinux::Runtime as SelinuxRuntime;
 use crate::sockaddr::{SocketAddr, SocketAddrMatcher};
 use crate::types::*;
 use crate::userdb::UserDB;
@@ -74,6 +75,7 @@ pub struct Settings {
     pub enrich_exe_hash: bool,
     pub enrich_exe_hash_size_limit: u64,
     pub enrich_exe_hash_cache_entries: usize,
+    pub enrich_selinux_why: bool,
     pub enrich_prefix: Option<String>,
 
     pub proc_label_keys: HashSet<Vec<u8>>,
@@ -118,6 +120,7 @@ impl Default for Settings {
             enrich_exe_hash: false,
             enrich_exe_hash_size_limit: 10_000_000,
             enrich_exe_hash_cache_entries: 1024,
+            enrich_selinux_why: false,
             enrich_prefix: None,
             proc_label_keys: HashSet::new(),
             proc_propagate_labels: HashSet::new(),
@@ -207,6 +210,8 @@ pub struct Coalesce<'a, 'ev> {
     emit_fn: Box<dyn 'a + FnMut(&Event<'ev>)>,
     /// Cache for exe hashes
     exe_hash_cache: Option<ExeHashCache>,
+    /// Optional SELinux policy reasoning runtime.
+    selinux: SelinuxRuntime,
 
     pub settings: Settings,
 }
@@ -424,12 +429,14 @@ impl<'a, 'ev> Coalesce<'a, 'ev> {
             next_expire: None,
             emit_fn: Box::new(emit_fn),
             exe_hash_cache: None,
+            selinux: SelinuxRuntime::new(false),
             // let max = self.settings.enrich_exe_hash_cache_entries;
             settings: Settings::default(),
         }
     }
 
     pub fn with_settings(mut self, settings: Settings) -> Self {
+        self.selinux = SelinuxRuntime::new(settings.enrich_selinux_why);
         self.settings = settings;
         if self.settings.enrich_exe_hash_cache_entries > 0 {
             self.exe_hash_cache = Some(ExeHashCache::new(
@@ -1068,6 +1075,7 @@ impl<'a, 'ev> Coalesce<'a, 'ev> {
         self.state.done.insert(EventKey(ev.node.clone(), ev.id));
 
         self.transform_event(&mut ev);
+        self.selinux.process(&mut ev);
         (self.emit_fn)(&ev)
     }
 

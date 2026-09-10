@@ -163,6 +163,8 @@ pub struct Enrich {
         rename = "exe-hash-cache-entries"
     )]
     pub exe_hash_cache_entries: usize,
+    #[serde(default, rename = "selinux-why")]
+    pub selinux_why: bool,
 }
 
 fn default_exe_hash_size_limit() -> u64 {
@@ -189,6 +191,7 @@ impl Default for Enrich {
             exe_hash: false,
             exe_hash_size_limit: default_exe_hash_size_limit(),
             exe_hash_cache_entries: default_exe_hash_cache_entries(),
+            selinux_why: false,
         }
     }
 }
@@ -470,6 +473,7 @@ impl Config {
             enrich_exe_hash: self.enrich.exe_hash,
             enrich_exe_hash_size_limit: self.enrich.exe_hash_size_limit,
             enrich_exe_hash_cache_entries: self.enrich.exe_hash_cache_entries,
+            enrich_selinux_why: self.enrich.selinux_why,
             enrich_prefix: self.enrich.prefix.clone(),
             proc_label_keys: self
                 .label_process

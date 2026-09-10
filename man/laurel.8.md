@@ -197,6 +197,12 @@ Options that can be configured here actually add information to events
 - `exe-hash-cache-entries`: Maximum number of entries in the exe hash
   LRU cache (keyed by inode + mtime). Set to 0 to disable caching.
   Default: 1024
+- `selinux-why`: Analyze SELinux AVC denials against the active policy
+  and add `SELINUX_WHY` and, when available, `SELINUX_WHY_DETAIL`
+  to the AVC record. Requires a build with the
+  `selinux` Cargo feature. Initialization or analysis failures are
+  logged and do not prevent the original audit event from being
+  emitted. Default: false
 
 ## `[label-process]` section
 

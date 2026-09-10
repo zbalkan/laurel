@@ -12,6 +12,7 @@ pub mod proc;
 pub mod procfs;
 pub(crate) mod quote;
 pub mod rotate;
+pub mod selinux;
 pub mod sockaddr;
 pub mod types;
 pub mod userdb;

@@ -7,6 +7,22 @@ use std::string::String;
 
 extern crate bindgen;
 
+#[cfg(feature = "selinux")]
+fn build_selinux() {
+    cc::Build::new()
+        .file("src/selinux_shim.c")
+        .warnings(true)
+        .compile("laurel_selinux");
+
+    println!("cargo:rustc-link-lib=sepol");
+    println!("cargo:rustc-link-lib=selinux");
+    println!("cargo:rerun-if-changed=src/selinux_shim.c");
+    println!("cargo:rerun-if-changed=src/selinux_shim.h");
+}
+
+#[cfg(not(feature = "selinux"))]
+fn build_selinux() {}
+
 fn gen_syscall() -> Result<String, Box<dyn std::error::Error>> {
     let mut buf = String::new();
 
@@ -74,6 +90,8 @@ fn gen_uring_ops() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    build_selinux();
+
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("const.rs");
 

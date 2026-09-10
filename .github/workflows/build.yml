@@ -80,6 +80,19 @@ jobs:
       - run: cargo test --no-default-features
       - run: cargo test
 
+  build-test-selinux:
+    runs-on: ubuntu-latest
+    container: ubuntu:latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependency
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get -qq update
+          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libselinux1-dev libsepol-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --features selinux
+
   build-x86_64-gnu:
     needs: [ check-fmt, build-test ]
     runs-on: ubuntu-latest

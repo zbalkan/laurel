@@ -7,6 +7,11 @@ _LAUREL_ is written in Rust. To build it, a reasonably recent Rust compiler is r
 - `clang`
 - the `libacl` library and its header files (Debian: `libacl1-dev`, RedHat: `libacl-devel`, Alpine: `acl-dev`)
 
+Optional SELinux AVC reasoning (`--features selinux`) additionally requires
+the development headers for `libselinux` and `libsepol` (Debian:
+`libselinux1-dev`, `libsepol-dev`; RedHat: `libselinux-devel`,
+`libsepol-devel`).
+
 Build binary, install:
 ``` console
 $ cargo build --release

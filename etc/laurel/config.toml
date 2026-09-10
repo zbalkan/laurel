@@ -139,6 +139,12 @@ user-groups = true
 # mtime). Set to 0 to disable caching. Default: 1024
 # exe-hash-cache-entries = 1024
 
+# Explain SELinux AVC denials using the active policy. Requires a Laurel
+# build with the "selinux" Cargo feature. If SELinux is unavailable or
+# policy analysis fails, Laurel logs the issue and emits the audit event
+# unchanged. Default: false
+# selinux-why = false
+
 # Add a prefix to enriched fields; this may be useful if logs are
 # consumed by analysis software that doesn't properly understand
 # uppercase and lowercase JSON object fields as identical. This
