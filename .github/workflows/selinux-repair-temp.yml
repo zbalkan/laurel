@@ -1,0 +1,119 @@
+name: Temporary SELinux repair
+
+on:
+  push:
+    branches: [selinux-repair-run]
+    paths: [.github/workflows/selinux-repair-temp.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: selinux-repair-run
+          fetch-depth: 0
+      - name: Install native dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get -qq update
+          sudo apt-get -qqy install build-essential libclang-dev libacl1-dev libselinux1-dev libsepol-dev secilc policycoreutils-python-utils
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply mechanical fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "src/coalesce.rs",
+              "        self.selinux.process(&mut ev);",
+              "        self.selinux\n            .process(&mut ev, self.settings.enrich_prefix.as_deref());",
+          )
+
+          old = '''        if !result.booleans.is_empty() {
+            let booleans = result
+                .booleans
+                .iter()
+                .map(|change| {
+                    Value::Map(vec![
+                        (Key::Literal("name"), Value::from(change.name.clone())),
+                        (
+                            Key::Literal("value"),
+                            Value::from(if change.value { 1_i64 } else { 0_i64 }),
+                        ),
+                    ])
+                })
+                .collect();
+            body.push((booleans_key, Value::List(booleans)));
+        }
+'''
+          new = '''        if !result.booleans.is_empty() {
+            let booleans = result
+                .booleans
+                .iter()
+                .map(|change| {
+                    let name = String::from_utf8_lossy(&change.name);
+                    let key = name
+                        .as_ref()
+                        .parse::<Key>()
+                        .expect("audit field key parsing is infallible");
+                    (key, Value::from(if change.value { 1_i64 } else { 0_i64 }))
+                })
+                .collect();
+            body.push((booleans_key, Value::Map(booleans)));
+        }
+'''
+          replace_once("src/selinux.rs", old, new)
+
+          old_test = '''            assert!(body.get("enriched_selinux_why_booleans").is_some());
+            assert!(body.get("SELINUX_WHY").is_none());
+'''
+          new_test = '''            assert!(matches!(
+                body.get("enriched_selinux_why_booleans"),
+                Some(Value::Map(values)) if values.len() == 1
+            ));
+            assert!(body.get("SELINUX_WHY").is_none());
+'''
+          replace_once("src/selinux.rs", old_test, new_test)
+
+          replace_once(
+              ".github/workflows/build.yml",
+              "pack/laurel-$version-$version-$arch/man/man8/",
+              "pack/laurel-$version-$arch/man/man8/",
+          )
+      - name: Format
+        run: cargo fmt --all
+      - name: Resolve added build dependency
+        run: cargo check --features selinux
+      - name: Compile differential policy
+        run: secilc -o /tmp/laurel-selinux-policy tests/selinux-policy.cil
+      - name: Test default build
+        run: cargo test --locked
+      - name: Test SELinux build and audit2why equivalence
+        env:
+          LAUREL_SELINUX_TEST_POLICY: /tmp/laurel-selinux-policy
+        run: cargo test --locked --features selinux
+      - name: Verify Rust 1.70 SELinux build
+        run: |
+          rustup toolchain install 1.70.0 --profile minimal
+          cargo +1.70.0 test --locked --features selinux --no-run
+      - name: Commit repaired tree
+        run: |
+          git rm .github/workflows/selinux-repair-temp.yml
+          git add src/coalesce.rs src/selinux.rs .github/workflows/build.yml Cargo.lock
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "selinux: finish integration fixes"
+          git push origin HEAD:selinux-repair-run
