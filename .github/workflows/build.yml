@@ -27,56 +27,16 @@ jobs:
           git fetch origin selinux-why
           git show origin/selinux-why:src/selinux.rs > src/selinux.rs
           git show origin/selinux-why:.github/workflows/build.yml > .github/workflows/build.yml
-          git show origin/selinux-why:build.rs > build.rs
           rm -f .github/workflows/selinux-repair-temp.yml
           python3 - <<'PY'
           from pathlib import Path
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected one match, got {count}')
-              p.write_text(text.replace(old, new, 1))
-
-          replace_once(
-              'src/coalesce.rs',
-              '        self.selinux.process(&mut ev);',
-              '        self.selinux\n            .process(&mut ev, self.settings.enrich_prefix.as_deref());',
-          )
-          replace_once(
-              'build.rs',
-              '    println!("cargo:rustc-link-lib=sepol");\n    println!("cargo:rustc-link-lib=selinux");',
-              '''    // audit2why uses libsepol's private service API. Those symbols are
-    // intentionally omitted from libsepol.so but are available in libsepol.a,
-    // just as upstream checkpolicy links the static archive. Ask the target C
-    // compiler where that archive lives so this also works with cross toolchains.
-    let compiler = cc::Build::new().get_compiler();
-    let output = compiler
-        .to_command()
-        .arg("-print-file-name=libsepol.a")
-        .output()
-        .expect("failed to locate libsepol.a with the target C compiler");
-    if !output.status.success() {
-        panic!("target C compiler failed to locate libsepol.a");
-    }
-    let archive = String::from_utf8(output.stdout).expect("non-UTF-8 libsepol.a path");
-    let archive = archive.trim();
-    let archive = Path::new(archive);
-    if !archive.is_file() {
-        panic!(
-            "SELinux support requires the static libsepol archive; compiler returned {}",
-            archive.display()
-        );
-    }
-    println!(
-        "cargo:rustc-link-search=native={}",
-        archive.parent().expect("libsepol.a has no parent").display()
-    );
-    println!("cargo:rustc-link-lib=static=sepol");
-    println!("cargo:rustc-link-lib=dylib=selinux");''',
-          )
+          p = Path('src/coalesce.rs')
+          text = p.read_text()
+          old = '        self.selinux.process(&mut ev);'
+          new = '        self.selinux\n            .process(&mut ev, self.settings.enrich_prefix.as_deref());'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one coalesce call, got {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
           PY
       - name: Format and resolve lockfile
         run: |
