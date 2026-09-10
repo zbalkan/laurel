@@ -14,8 +14,34 @@ fn build_selinux() {
         .warnings(true)
         .compile("laurel_selinux");
 
-    println!("cargo:rustc-link-lib=sepol");
-    println!("cargo:rustc-link-lib=selinux");
+    // audit2why uses libsepol's private service API. Those symbols are
+    // intentionally omitted from libsepol.so but are available in libsepol.a,
+    // just as upstream checkpolicy links the static archive. Ask the target C
+    // compiler where that archive lives so this also works with cross toolchains.
+    let compiler = cc::Build::new().get_compiler();
+    let output = compiler
+        .to_command()
+        .arg("-print-file-name=libsepol.a")
+        .output()
+        .expect("failed to locate libsepol.a with the target C compiler");
+    if !output.status.success() {
+        panic!("target C compiler failed to locate libsepol.a");
+    }
+    let archive = String::from_utf8(output.stdout).expect("non-UTF-8 libsepol.a path");
+    let archive = archive.trim();
+    let archive = Path::new(archive);
+    if !archive.is_file() {
+        panic!(
+            "SELinux support requires the static libsepol archive; compiler returned {}",
+            archive.display()
+        );
+    }
+    println!(
+        "cargo:rustc-link-search=native={}",
+        archive.parent().expect("libsepol.a has no parent").display()
+    );
+    println!("cargo:rustc-link-lib=static=sepol");
+    println!("cargo:rustc-link-lib=dylib=selinux");
     println!("cargo:rerun-if-changed=src/selinux_shim.c");
     println!("cargo:rerun-if-changed=src/selinux_shim.h");
 }
