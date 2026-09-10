@@ -1,0 +1,49 @@
+; Minimal policy used to compare Laurel's SELinux reason classification with
+; upstream audit2why. It deliberately covers an allow, a missing TE rule,
+; a Boolean-controlled allow, a dontaudit rule, and a constraint denial.
+
+(mls true)
+
+(class file (read write execute getattr))
+(classorder (file))
+
+(sid kernel)
+(sidorder (kernel))
+
+(category c0)
+(categoryorder (c0))
+(sensitivity s0)
+(sensitivityorder (s0))
+(sensitivitycategory s0 (c0))
+
+(user test_u)
+(role test_r)
+(type src_t)
+(type dst_t)
+
+(roletype test_r src_t)
+(roletype test_r dst_t)
+(userrole test_u test_r)
+(userlevel test_u (s0))
+(userrange test_u ((s0) (s0 (c0))))
+
+(sidcontext kernel (test_u test_r src_t ((s0) (s0))))
+
+; ALLOW for src_t -> src_t:getattr.
+(allow src_t src_t (file (getattr)))
+
+; TE allows read, but the constraint below rejects src_t -> dst_t:read.
+(allow src_t dst_t (file (read)))
+(constrain (file (read)) (eq t1 t2))
+
+; A single Boolean flip should allow src_t -> dst_t:write.
+(boolean allow_write false)
+(booleanif allow_write
+    (true
+        (allow src_t dst_t (file (write)))
+    )
+)
+
+; No allow exists for execute, and audit suppression distinguishes DONTAUDIT
+; from an ordinary missing TE rule.
+(dontaudit src_t dst_t (file (execute)))
