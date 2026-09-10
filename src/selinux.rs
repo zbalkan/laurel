@@ -300,7 +300,10 @@ mod enabled {
     }
 
     impl Analyzer {
-        fn from_open(status: c_int, raw: *mut ffi::LaurelSelinux) -> Result<Option<Self>, SelinuxError> {
+        fn from_open(
+            status: c_int,
+            raw: *mut ffi::LaurelSelinux,
+        ) -> Result<Option<Self>, SelinuxError> {
             if status == ffi::DISABLED {
                 return Ok(None);
             }
@@ -406,9 +409,8 @@ mod enabled {
                 }
                 // SAFETY: on success the shim guarantees this many initialized
                 // bytes until the next analyze/close call. Copy immediately.
-                let bytes = unsafe {
-                    slice::from_raw_parts(native.detail.cast::<u8>(), native.detail_len)
-                };
+                let bytes =
+                    unsafe { slice::from_raw_parts(native.detail.cast::<u8>(), native.detail_len) };
                 Some(bytes.to_vec())
             };
 
@@ -479,16 +481,15 @@ mod enabled {
                 .booleans
                 .iter()
                 .map(|change| {
-                    Value::Map(vec![
-                        (Key::Literal("name"), Value::from(change.name.clone())),
-                        (
-                            Key::Literal("value"),
-                            Value::from(if change.value { 1_i64 } else { 0_i64 }),
-                        ),
-                    ])
+                    let name = String::from_utf8_lossy(&change.name);
+                    let key = name
+                        .as_ref()
+                        .parse::<Key>()
+                        .expect("audit field key parsing is infallible");
+                    (key, Value::from(if change.value { 1_i64 } else { 0_i64 }))
                 })
                 .collect();
-            body.push((booleans_key, Value::List(booleans)));
+            body.push((booleans_key, Value::Map(booleans)));
         }
 
         if let Some(detail) = &result.detail {
@@ -743,7 +744,10 @@ finally:
 
             attach_result(&mut body, &result, Some("enriched_"));
             assert!(body.get("enriched_selinux_why").is_some());
-            assert!(body.get("enriched_selinux_why_booleans").is_some());
+            assert!(matches!(
+                body.get("enriched_selinux_why_booleans"),
+                Some(Value::Map(values)) if values.len() == 1
+            ));
             assert!(body.get("SELINUX_WHY").is_none());
             assert!(body.get("SELINUX_WHY_DETAIL").is_none());
         }
@@ -760,30 +764,50 @@ finally:
             let cases = [
                 (
                     "allow",
-                    query("test_u:test_r:src_t:s0", "test_u:test_r:src_t:s0", "getattr"),
+                    query(
+                        "test_u:test_r:src_t:s0",
+                        "test_u:test_r:src_t:s0",
+                        "getattr",
+                    ),
                 ),
                 (
                     "te-rule",
-                    query("test_u:test_r:src_t:s0", "test_u:test_r:dst_t:s0", "getattr"),
+                    query(
+                        "test_u:test_r:src_t:s0",
+                        "test_u:test_r:dst_t:s0",
+                        "getattr",
+                    ),
                 ),
                 (
                     "boolean",
-                    query("test_u:test_r:src_t:s0", "test_u:test_r:dst_t:s0", "write"),
+                    query(
+                        "test_u:test_r:src_t:s0",
+                        "test_u:test_r:dst_t:s0",
+                        "write",
+                    ),
                 ),
                 (
                     "dontaudit",
-                    query("test_u:test_r:src_t:s0", "test_u:test_r:dst_t:s0", "execute"),
+                    query(
+                        "test_u:test_r:src_t:s0",
+                        "test_u:test_r:dst_t:s0",
+                        "execute",
+                    ),
                 ),
                 (
                     "constraint",
-                    query("test_u:test_r:src_t:s0", "test_u:test_r:dst_t:s0", "read"),
+                    query(
+                        "test_u:test_r:src_t:s0",
+                        "test_u:test_r:dst_t:s0",
+                        "read",
+                    ),
                 ),
             ];
 
             for (name, query) in cases {
-                let ours = analyzer.analyze(&query).unwrap_or_else(|error| {
-                    panic!("{name}: Laurel analysis failed: {error}")
-                });
+                let ours = analyzer
+                    .analyze(&query)
+                    .unwrap_or_else(|error| panic!("{name}: Laurel analysis failed: {error}"));
                 let (upstream_reason, upstream_detail) = upstream_audit2why(policy, &query);
                 assert_eq!(
                     ours.reason.native_code(),
