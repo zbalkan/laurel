@@ -27,16 +27,29 @@ jobs:
           git fetch origin selinux-why
           git show origin/selinux-why:src/selinux.rs > src/selinux.rs
           git show origin/selinux-why:.github/workflows/build.yml > .github/workflows/build.yml
+          git show origin/selinux-why:build.rs > build.rs
           rm -f .github/workflows/selinux-repair-temp.yml
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('src/coalesce.rs')
-          text = p.read_text()
-          old = '        self.selinux.process(&mut ev);'
-          new = '        self.selinux\n            .process(&mut ev, self.settings.enrich_prefix.as_deref());'
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one coalesce call, got {text.count(old)}')
-          p.write_text(text.replace(old, new, 1))
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, got {count}')
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              'src/coalesce.rs',
+              '        self.selinux.process(&mut ev);',
+              '        self.selinux\n            .process(&mut ev, self.settings.enrich_prefix.as_deref());',
+          )
+          replace_once(
+              'build.rs',
+              'println!("cargo:rustc-link-lib=sepol");',
+              'println!("cargo:rustc-link-lib=static=sepol");',
+          )
           PY
       - name: Format and resolve lockfile
         run: |
