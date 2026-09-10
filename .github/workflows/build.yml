@@ -1,241 +1,13 @@
 on:
   push:
     paths:
-      - src/**
-      - tests/**
-      - audit-specs/**
-      - syscall-tables/**
-      - build.rs
-      - Cargo.*
       - .github/workflows/build.yml
-      - Containerfile
-  pull_request:
-    paths:
-      - src/**
-      - tests/**
-      - audit-specs/**
-      - syscall-tables/**
-      - build.rs
-      - Cargo.*
-      - .github/workflows/build.yml
-      - Containerfile
 
 permissions:
   contents: read
 
 jobs:
-  check-fmt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo fmt --check
-
-  build-test:
-    runs-on: ubuntu-latest
-    container: ubuntu:latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependency
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get -qq update
-          apt-get -qqy dist-upgrade
-          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libgoogle-perftools-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: "${{ runner.os }}-test-cargo-${{ hashFiles('**/Cargo.lock') }}"
-          restore-keys: ${{ runner.os }}-test-cargo-
-      - run: cargo build
-      - run: cargo test
-      - run: cargo bench --no-run
-
-  build-test-old:
-    runs-on: ubuntu-latest
-    container: ubuntu:latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependency
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get -qq update
-          apt-get -qqy dist-upgrade
-          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libgoogle-perftools-dev libselinux1-dev libsepol-dev
-      - uses: dtolnay/rust-toolchain@1.70 # minimum supported Rust version (see Cargo.toml)
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: "${{ runner.os }}-test-cargo-${{ hashFiles('**/Cargo.lock') }}"
-          restore-keys: ${{ runner.os }}-test-cargo-
-      - run: cargo test --no-default-features
-      - run: cargo test
-      - run: cargo test --locked --features selinux
-
-  build-test-selinux:
-    runs-on: ubuntu-latest
-    container: ubuntu:latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependency
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get -qq update
-          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libselinux1-dev libsepol-dev secilc policycoreutils-python-utils
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Compile differential-test policy
-        run: secilc -o /tmp/laurel-selinux-policy tests/selinux-policy.cil
-      - name: Test SELinux support against upstream audit2why
-        env:
-          LAUREL_SELINUX_TEST_POLICY: /tmp/laurel-selinux-policy
-        run: cargo test --locked --features selinux
-
-  build-x86_64-gnu:
-    needs: [ check-fmt, build-test ]
-    runs-on: ubuntu-latest
-    container: debian:bullseye
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependency
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get -qq update
-          apt-get -qqy dist-upgrade
-          apt-get -qqy install curl build-essential libclang-dev libacl1-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
-      - name: Build
-        run: cargo build --target=x86_64-unknown-linux-gnu --release
-      - uses: actions/upload-artifact@v7
-        with:
-          name: binaries-x86_64-gnu
-          path: |
-            target/*/release/laurel*
-            !target/*/release/*.*
-          if-no-files-found: error
-
-  build-x86_64-musl:
-    needs: [ check-fmt, build-test ]
-    runs-on: ubuntu-latest
-    container: alpine:3.23
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependency
-        run: |
-          apk add git ca-certificates tar rust cargo clang-dev acl-dev acl-static musl-dev linux-headers
-          apk add binutils file
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: "${{ runner.os }}-x86_64-musl-cargo-${{ hashFiles('**/Cargo.lock') }}"
-          restore-keys: ${{ runner.os }}-cargo-x86_64-musl-
-      - name: Build
-        run: |
-          RUSTFLAGS='-C target-feature=+crt-static -L/usr/lib -l static=acl' \
-              cargo build --target x86_64-alpine-linux-musl --release
-      - name: Show binary charcteristics
-        run: |
-          set -x
-          file target/x86_64-alpine-linux-musl/release/laurel
-          ldd  target/x86_64-alpine-linux-musl/release/laurel
-          objdump -x target/x86_64-alpine-linux-musl/release/laurel | grep NEEDED || true
-          set +x
-          if [ -n "$(objdump -x target/x86_64-alpine-linux-musl/debug/laurel | grep NEEDED)" ]; then
-              echo "laurel is linked against shared libraries" >&2
-              exit 1
-          fi
-      - uses: actions/upload-artifact@v7
-        with:
-          name: binaries-x86_64-musl
-          path: |
-            target/*/release/laurel*
-            !target/*/release/*.*
-          if-no-files-found: error
-
-  build-aarch64-gnu:
-    needs: [ check-fmt, build-test ]
-    runs-on: ubuntu-latest
-    container: debian:bullseye
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependency
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          dpkg --add-architecture arm64
-          apt-get -qq update
-          apt-get -qqy dist-upgrade
-          apt-get -qqy install curl build-essential libclang-dev gcc-aarch64-linux-gnu libacl1-dev:arm64
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-      - name: Build
-        run: cargo build --target=aarch64-unknown-linux-gnu --release
-      - uses: actions/upload-artifact@v7
-        with:
-          name: binaries-aarch64-gnu
-          path: |
-            target/*/release/laurel*
-            !target/*/release/*.*
-          if-no-files-found: error
-
-  build-armv7-gnueabihf:
-    needs: [ check-fmt, build-test ]
-    runs-on: ubuntu-latest
-    container: debian:bullseye
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependency
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          dpkg --add-architecture armhf
-          apt-get -qq update
-          apt-get -qqy dist-upgrade
-          apt-get -qqy install curl build-essential libclang-dev gcc-arm-linux-gnueabihf libacl1-dev:armhf
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: armv7-unknown-linux-gnueabihf
-      - name: Build
-        run: cargo build --target=armv7-unknown-linux-gnueabihf --release
-      - uses: actions/upload-artifact@v7
-        with:
-          name: binaries-armv7-gnueabihf
-          path: |
-            target/*/release/laurel*
-            !target/*/release/*.*
-          if-no-files-found: error
-
-  build-man:
-    runs-on: ubuntu-latest
-    container: debian:bullseye
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependency
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get -qq update
-          apt-get -qqy dist-upgrade
-          apt-get -qqy install make pandoc
-      - run: make -C man
-
   repair-selinux:
-    if: github.ref == 'refs/heads/selinux-repair-run'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -244,86 +16,27 @@ jobs:
         with:
           ref: selinux-repair-run
           fetch-depth: 0
-      - name: Install repair dependencies
+      - name: Install dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get -qq update
           sudo apt-get -qqy install build-essential libclang-dev libacl1-dev libselinux1-dev libsepol-dev secilc policycoreutils-python-utils
       - uses: dtolnay/rust-toolchain@stable
-      - name: Apply remaining fixes
+      - name: Assemble candidate tree
         run: |
+          git fetch origin selinux-why
+          git show origin/selinux-why:src/selinux.rs > src/selinux.rs
+          git show origin/selinux-why:.github/workflows/build.yml > .github/workflows/build.yml
+          rm -f .github/workflows/selinux-repair-temp.yml
           python3 - <<'PY'
           from pathlib import Path
-          import subprocess
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected one match, got {count}")
-              p.write_text(text.replace(old, new, 1))
-
-          replace_once(
-              'src/coalesce.rs',
-              '        self.selinux.process(&mut ev);',
-              '        self.selinux\n            .process(&mut ev, self.settings.enrich_prefix.as_deref());',
-          )
-
-          old = '''        if !result.booleans.is_empty() {
-              let booleans = result
-                  .booleans
-                  .iter()
-                  .map(|change| {
-                      Value::Map(vec![
-                          (Key::Literal("name"), Value::from(change.name.clone())),
-                          (
-                              Key::Literal("value"),
-                              Value::from(if change.value { 1_i64 } else { 0_i64 }),
-                          ),
-                      ])
-                  })
-                  .collect();
-              body.push((booleans_key, Value::List(booleans)));
-          }
-          '''
-          new = '''        if !result.booleans.is_empty() {
-              let booleans = result
-                  .booleans
-                  .iter()
-                  .map(|change| {
-                      let name = String::from_utf8_lossy(&change.name);
-                      let key = name
-                          .as_ref()
-                          .parse::<Key>()
-                          .expect("audit field key parsing is infallible");
-                      (key, Value::from(if change.value { 1_i64 } else { 0_i64 }))
-                  })
-                  .collect();
-              body.push((booleans_key, Value::Map(booleans)));
-          }
-          '''
-          replace_once('src/selinux.rs', old, new)
-
-          old_test = '''            assert!(body.get("enriched_selinux_why_booleans").is_some());
-              assert!(body.get("SELINUX_WHY").is_none());'''
-          new_test = '''            assert!(matches!(
-                  body.get("enriched_selinux_why_booleans"),
-                  Some(Value::Map(values)) if values.len() == 1
-              ));
-              assert!(body.get("SELINUX_WHY").is_none());'''
-          replace_once('src/selinux.rs', old_test, new_test)
-
-          clean = subprocess.check_output(
-              ['git', 'show', '99cdab53881d318daa2cdbf58e13c18264f03fe0:.github/workflows/build.yml'],
-              text=True,
-          )
-          clean = clean.replace(
-              'pack/laurel-$version-$version-$arch/man/man8/',
-              'pack/laurel-$version-$arch/man/man8/',
-          )
-          Path('.github/workflows/build.yml').write_text(clean)
-          Path('.github/workflows/selinux-repair-temp.yml').unlink(missing_ok=True)
+          p = Path('src/coalesce.rs')
+          text = p.read_text()
+          old = '        self.selinux.process(&mut ev);'
+          new = '        self.selinux\n            .process(&mut ev, self.settings.enrich_prefix.as_deref());'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one coalesce call, got {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
           PY
       - name: Format and resolve lockfile
         run: |
