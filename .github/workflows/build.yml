@@ -2,6 +2,7 @@ on:
   push:
     paths:
       - src/**
+      - tests/**
       - audit-specs/**
       - syscall-tables/**
       - build.rs
@@ -11,6 +12,7 @@ on:
   pull_request:
     paths:
       - src/**
+      - tests/**
       - audit-specs/**
       - syscall-tables/**
       - build.rs
@@ -65,7 +67,7 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get -qq update
           apt-get -qqy dist-upgrade
-          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libgoogle-perftools-dev
+          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libgoogle-perftools-dev libselinux1-dev libsepol-dev
       - uses: dtolnay/rust-toolchain@1.70 # minimum supported Rust version (see Cargo.toml)
       - uses: actions/cache@v5
         with:
@@ -79,6 +81,7 @@ jobs:
           restore-keys: ${{ runner.os }}-test-cargo-
       - run: cargo test --no-default-features
       - run: cargo test
+      - run: cargo test --locked --features selinux
 
   build-test-selinux:
     runs-on: ubuntu-latest
@@ -89,9 +92,14 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get -qq update
-          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libselinux1-dev libsepol-dev
+          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libselinux1-dev libsepol-dev secilc policycoreutils-python-utils
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --features selinux
+      - name: Compile differential-test policy
+        run: secilc -o /tmp/laurel-selinux-policy tests/selinux-policy.cil
+      - name: Test SELinux support against upstream audit2why
+        env:
+          LAUREL_SELINUX_TEST_POLICY: /tmp/laurel-selinux-policy
+        run: cargo test --locked --features selinux
 
   build-x86_64-gnu:
     needs: [ check-fmt, build-test ]
@@ -298,7 +306,7 @@ jobs:
 
               install -m755 artifacts/$tgt/release/laurel* pack/laurel-$version-$arch/bin
               install -m644 artifacts/*.7                  pack/laurel-$version-$arch/man/man7/
-              install -m644 artifacts/*.8                  pack/laurel-$version-$arch/man/man8/
+              install -m644 artifacts/*.8                  pack/laurel-$version-$version-$arch/man/man8/
           done
 
           cd pack
