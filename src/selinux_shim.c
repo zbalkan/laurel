@@ -7,7 +7,10 @@
 #include <sepol/policydb.h>
 #include <sepol/policydb/services.h>
 #include <sepol/sepol.h>
+#include <selinux/avc.h>
 #include <selinux/selinux.h>
+
+#define POLICY_SNAPSHOT_RETRIES 3
 
 struct laurel_boolean {
     char *name;
@@ -20,6 +23,7 @@ struct laurel_selinux {
     struct laurel_boolean *booleans;
     size_t boolean_count;
     size_t boolean_capacity;
+    int tracks_policyload;
     int policyload;
     char *detail;
     size_t detail_len;
@@ -50,7 +54,7 @@ static int set_detail(laurel_selinux_t *ctx, const char *data, size_t len)
         return LAUREL_SELINUX_NOMEM;
 
     memcpy(p, data, len);
-    p[len] = ' ';
+    p[len] = '\0';
     ctx->detail = p;
     ctx->detail_len = len;
     return LAUREL_SELINUX_OK;
@@ -151,15 +155,68 @@ static void destroy_unpublished(laurel_selinux_t *ctx)
     free(ctx);
 }
 
-int laurel_selinux_open(laurel_selinux_t **out)
+/*
+ * Opening /sys/fs/selinux/policy snapshots the active policy. Check the
+ * policy-load sequence immediately before and after that open so the snapshot
+ * can be associated with a generation unambiguously. If a policy change races
+ * with the open, discard the snapshot and retry a bounded number of times.
+ */
+static int open_current_policy(FILE **out, int *generation)
+{
+    const char *policy_path;
+    FILE *fp;
+    int before;
+    int after;
+    int attempt;
+
+    if (!out || !generation)
+        return LAUREL_SELINUX_INVALID_ARGUMENT;
+
+    *out = NULL;
+    *generation = -1;
+
+    for (attempt = 0; attempt < POLICY_SNAPSHOT_RETRIES; attempt++) {
+        before = selinux_status_policyload();
+        if (before < 0)
+            return LAUREL_SELINUX_POLICY_ERROR;
+
+        policy_path = selinux_current_policy_path();
+        if (!policy_path)
+            return LAUREL_SELINUX_POLICY_ERROR;
+
+        fp = fopen(policy_path, "re");
+        if (!fp)
+            return LAUREL_SELINUX_POLICY_ERROR;
+
+        after = selinux_status_policyload();
+        if (after < 0) {
+            fclose(fp);
+            return LAUREL_SELINUX_POLICY_ERROR;
+        }
+
+        if (before == after) {
+            *out = fp;
+            *generation = after;
+            return LAUREL_SELINUX_OK;
+        }
+
+        fclose(fp);
+    }
+
+    return LAUREL_SELINUX_POLICY_ERROR;
+}
+
+static int laurel_selinux_open_impl(
+    laurel_selinux_t **out,
+    const char *explicit_policy_path)
 {
     laurel_selinux_t *ctx = NULL;
     struct sepol_policy_file *pf = NULL;
-    const char *policy_path;
     FILE *fp = NULL;
     unsigned int boolean_count = 0;
     int enabled;
-    int rc;
+    int snapshot_generation = -1;
+    int rc = LAUREL_SELINUX_POLICY_ERROR;
 
     if (!out)
         return LAUREL_SELINUX_INVALID_ARGUMENT;
@@ -168,31 +225,27 @@ int laurel_selinux_open(laurel_selinux_t **out)
     if (active_ctx)
         return LAUREL_SELINUX_BUSY;
 
-    enabled = is_selinux_enabled();
-    if (enabled == 0)
-        return LAUREL_SELINUX_DISABLED;
-    if (enabled < 0)
-        return LAUREL_SELINUX_POLICY_ERROR;
+    if (explicit_policy_path) {
+        if (!*explicit_policy_path)
+            return LAUREL_SELINUX_INVALID_ARGUMENT;
+        fp = fopen(explicit_policy_path, "re");
+        if (!fp)
+            return LAUREL_SELINUX_POLICY_ERROR;
+    } else {
+        enabled = is_selinux_enabled();
+        if (enabled == 0)
+            return LAUREL_SELINUX_DISABLED;
+        if (enabled < 0)
+            return LAUREL_SELINUX_POLICY_ERROR;
 
-    /*
-     * The kernel status page provides the policy generation directly. This
-     * avoids depending on receipt of particular MAC_* audit records to notice
-     * a policy or Boolean change.
-     */
-    if (selinux_status_open(0) < 0)
-        return LAUREL_SELINUX_POLICY_ERROR;
-    status_opened = 1;
+        /* Use the kernel status page; do not fall back to netlink. */
+        if (selinux_status_open(0) < 0)
+            return LAUREL_SELINUX_POLICY_ERROR;
+        status_opened = 1;
 
-    policy_path = selinux_current_policy_path();
-    if (!policy_path) {
-        rc = LAUREL_SELINUX_POLICY_ERROR;
-        goto error;
-    }
-
-    fp = fopen(policy_path, "re");
-    if (!fp) {
-        rc = LAUREL_SELINUX_POLICY_ERROR;
-        goto error;
+        rc = open_current_policy(&fp, &snapshot_generation);
+        if (rc != LAUREL_SELINUX_OK)
+            goto error;
     }
 
     ctx = calloc(1, sizeof(*ctx));
@@ -200,6 +253,8 @@ int laurel_selinux_open(laurel_selinux_t **out)
         rc = LAUREL_SELINUX_NOMEM;
         goto error;
     }
+    ctx->tracks_policyload = explicit_policy_path == NULL;
+    ctx->policyload = snapshot_generation;
 
     if (sepol_policy_file_create(&pf) != 0 ||
         sepol_policydb_create(&ctx->policydb) != 0) {
@@ -251,14 +306,9 @@ int laurel_selinux_open(laurel_selinux_t **out)
     }
     sidtab_initialized = 1;
 
+    /* libsepol's service API uses process-global policydb and sidtab pointers. */
     sepol_set_policydb(&ctx->policydb->p);
     sepol_set_sidtab(&active_sidtab);
-
-    ctx->policyload = selinux_status_policyload();
-    if (ctx->policyload < 0) {
-        rc = LAUREL_SELINUX_POLICY_ERROR;
-        goto error;
-    }
 
     active_ctx = ctx;
     *out = ctx;
@@ -282,12 +332,29 @@ error:
     return rc;
 }
 
+int laurel_selinux_open(laurel_selinux_t **out)
+{
+    return laurel_selinux_open_impl(out, NULL);
+}
+
+int laurel_selinux_open_policy(laurel_selinux_t **out, const char *policy_path)
+{
+    if (!policy_path)
+        return LAUREL_SELINUX_INVALID_ARGUMENT;
+    return laurel_selinux_open_impl(out, policy_path);
+}
+
 int laurel_selinux_policy_changed(laurel_selinux_t *ctx, int *changed)
 {
     int current;
 
     if (!ctx || ctx != active_ctx || !changed)
         return LAUREL_SELINUX_INVALID_ARGUMENT;
+
+    if (!ctx->tracks_policyload) {
+        *changed = 0;
+        return LAUREL_SELINUX_OK;
+    }
 
     current = selinux_status_policyload();
     if (current < 0)
@@ -316,14 +383,18 @@ static int check_booleans(
         struct laurel_boolean *entry = &ctx->booleans[i];
         int candidate = !entry->active;
 
+        /*
+         * A failed mutation leaves the userspace policydb state uncertain.
+         * Discard the analyzer rather than use it for another decision.
+         */
         if (set_policy_boolean(ctx, entry->name, candidate) < 0)
-            return LAUREL_SELINUX_COMPUTE_ERROR;
+            return LAUREL_SELINUX_RELOAD_REQUIRED;
 
         rc = sepol_compute_av_reason(ssid, tsid, tclass, av, &avd, &reason);
 
-        /* Always restore the effective-policy Boolean value first. */
+        /* Restore before interpreting either the result or the error. */
         if (set_policy_boolean(ctx, entry->name, entry->active) < 0)
-            return LAUREL_SELINUX_COMPUTE_ERROR;
+            return LAUREL_SELINUX_RELOAD_REQUIRED;
 
         if (rc < 0)
             return LAUREL_SELINUX_COMPUTE_ERROR;
