@@ -306,7 +306,7 @@ jobs:
 
               install -m755 artifacts/$tgt/release/laurel* pack/laurel-$version-$arch/bin
               install -m644 artifacts/*.7                  pack/laurel-$version-$arch/man/man7/
-              install -m644 artifacts/*.8                  pack/laurel-$version-$version-$arch/man/man8/
+              install -m644 artifacts/*.8                  pack/laurel-$version-$arch/man/man8/
           done
 
           cd pack
