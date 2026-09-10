@@ -38,7 +38,10 @@ fn build_selinux() {
     }
     println!(
         "cargo:rustc-link-search=native={}",
-        archive.parent().expect("libsepol.a has no parent").display()
+        archive
+            .parent()
+            .expect("libsepol.a has no parent")
+            .display()
     );
     println!("cargo:rustc-link-lib=static=sepol");
     println!("cargo:rustc-link-lib=dylib=selinux");
