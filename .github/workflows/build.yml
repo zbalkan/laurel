@@ -85,19 +85,20 @@ jobs:
 
   build-test-selinux:
     runs-on: ubuntu-latest
-    # The differential test uses an explicit policy file and therefore tests
-    # libselinux/libsepol/audit2why userspace semantics. Fedora gives us the
-    # same SELinux userspace stack used by the target RHEL-family systems.
-    # The GitHub-hosted kernel is still Ubuntu, so this is intentionally not
-    # presented as a test of an enforcing SELinux kernel.
-    container: fedora:44
+    # The differential test loads an explicit policy file and therefore tests
+    # libselinux/libsepol/audit2why userspace semantics and the RHEL-family
+    # package layout. A container shares the GitHub-hosted Ubuntu kernel, so
+    # this is intentionally not presented as an enforcing-kernel SELinux test.
+    container: rockylinux:9
     steps:
       - uses: actions/checkout@v6
-      - name: Install dependency
+      - name: Enable CRB and install dependencies
         run: |
+          dnf -y install dnf-plugins-core
+          dnf config-manager --set-enabled crb
           dnf -y install \
             curl gcc gcc-c++ make clang-devel libacl-devel \
-            libselinux-devel libsepol-devel secilc \
+            libselinux-devel libsepol-devel libsepol-static secilc \
             policycoreutils-python-utils python3
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile differential-test policy
