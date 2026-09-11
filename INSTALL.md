@@ -15,9 +15,22 @@ provided by `libselinux1-dev` and `libsepol-dev`. On RHEL-family systems use
 `libsepol-static` through CodeReady Builder, and compatible distributions such
 as Rocky Linux provide it through CRB.
 
-Build binary, install:
+Build the standard binary:
 ``` console
 $ cargo build --release
+```
+
+Build a binary with SELinux AVC reasoning compiled in:
+``` console
+$ cargo build --release --features selinux
+```
+
+The `[enrich] selinux-why` configuration option is a runtime switch for a binary
+that was built with the `selinux` feature. It does not add SELinux support to a
+standard build that was compiled without that feature.
+
+Install the resulting binary:
+``` console
 $ sudo install -m755 target/release/laurel /usr/local/sbin/laurel
 ```
 If the environment variable `LAUREL_BUILD_ID` is set at build time, it is output after the version number.
@@ -28,6 +41,13 @@ For tagged releases, two types of binaries are created:
 
 - a statically-linked, [musl-libc](https://musl.libc.org) version, built on Alpine 3.16,
 - a dynamically-linked version based on an older version of GNU libc, built on CentOS 7.
+
+The standard release workflow continues to build Laurel without SELinux AVC
+reasoning. SELinux-enabled builds are produced separately by
+`.github/workflows/build-with-selinux.yml` and are compiled with
+`--features selinux`. A SELinux release uses a `vVERSION-selinux` tag and a
+distinct `*-selinux.tar.gz` artifact so that the two build variants are not
+ambiguous.
 
 The static build lacks the ability to perform user and group lookups using the _nsswitch_ facility used on GNU-libc-based systems, therefore it should be avoided on systems where other user/group databases than local `/etc/passwd` and `/etc/group` files are used (cf. issue #84).
 
@@ -46,7 +66,7 @@ $ sudo install -m755 laurel /usr/local/sbin/laurel
     $ sudo useradd --system --home-dir /var/log/laurel --create-home _laurel
     ```
 - Configure _LAUREL_: Copy the provided annotated [example](etc/laurel/config.toml) to `/etc/laurel/config.toml` and customize it.
-- Register _LAUREL_ as an _auditd_ plugin: Depending on your _auditd_ version, copy the provided [example](etc/audit/plugins.d/laurel.conf) to
+- Register _LAUREL_: as an _auditd_ plugin: Depending on your _auditd_ version, copy the provided [example](etc/audit/plugins.d/laurel.conf) to
     - `/etc/audit/plugins.d/laurel.conf` for _auditd_ 3
     - `/etc/audisp/plugins.d/laurel.conf` for _auditd_ 2
 - If you are running SELinux, compile the provided policy and install it into the running kernel:
