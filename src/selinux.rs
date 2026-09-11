@@ -776,11 +776,7 @@ finally:
                 ),
                 (
                     "boolean",
-                    query(
-                        "test_u:test_r:src_t:s0",
-                        "test_u:test_r:dst_t:s0",
-                        "write",
-                    ),
+                    query("test_u:test_r:src_t:s0", "test_u:test_r:dst_t:s0", "write"),
                 ),
                 (
                     "dontaudit",
@@ -792,11 +788,7 @@ finally:
                 ),
                 (
                     "constraint",
-                    query(
-                        "test_u:test_r:src_t:s0",
-                        "test_u:test_r:dst_t:s0",
-                        "read",
-                    ),
+                    query("test_u:test_r:src_t:s0", "test_u:test_r:dst_t:s0", "read"),
                 ),
             ];
 
