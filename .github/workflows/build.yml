@@ -97,7 +97,7 @@ jobs:
           dnf -y install dnf-plugins-core epel-release
           dnf config-manager --set-enabled crb
           dnf -y install \
-            curl gcc gcc-c++ make clang-devel libacl-devel \
+            gcc gcc-c++ make clang-devel libacl-devel \
             libselinux-devel libsepol-devel libsepol-static secilc \
             policycoreutils-python-utils python3
       - uses: dtolnay/rust-toolchain@stable
