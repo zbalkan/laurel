@@ -1,0 +1,126 @@
+name: Build with SELinux
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*-selinux'
+    paths:
+      - src/**
+      - tests/**
+      - build.rs
+      - Cargo.*
+      - contrib/selinux/**
+      - etc/laurel/config.toml
+      - .github/workflows/build-with-selinux.yml
+  pull_request:
+    paths:
+      - src/**
+      - tests/**
+      - build.rs
+      - Cargo.*
+      - contrib/selinux/**
+      - etc/laurel/config.toml
+      - .github/workflows/build-with-selinux.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-selinux:
+    runs-on: ubuntu-latest
+    # Rocky supplies the RHEL-family SELinux userspace and packaging model.
+    # The container still shares GitHub's Ubuntu kernel, so this validates
+    # libselinux/libsepol/audit2why semantics, not enforcing-kernel behavior.
+    container: rockylinux:9
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Enable CRB/EPEL and install dependencies
+        run: |
+          dnf -y install dnf-plugins-core epel-release
+          dnf config-manager --set-enabled crb
+          dnf -y install \
+            gcc gcc-c++ make clang-devel libacl-devel \
+            libselinux-devel libsepol-devel libsepol-static secilc \
+            policycoreutils-python-utils python3 tar gzip
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile differential-test policy
+        run: |
+          secilc \
+            -o /tmp/laurel-selinux-policy \
+            -f /tmp/laurel-file-contexts \
+            tests/selinux-policy.cil
+
+      - name: Test SELinux-enabled build against upstream audit2why
+        env:
+          LAUREL_SELINUX_TEST_POLICY: /tmp/laurel-selinux-policy
+        run: cargo test --locked --features selinux
+
+      - name: Build SELinux-enabled release binaries
+        run: cargo build --locked --release --features selinux
+
+      - name: Verify SELinux linkage
+        run: ldd target/release/laurel | grep -F libselinux.so
+
+      - name: Package SELinux-enabled build
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | \
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          package="laurel-${version}-x86_64-glibc-selinux"
+
+          mkdir -p "pack/${package}/bin" \
+                   "pack/${package}/etc/audit/plugins.d" \
+                   "pack/${package}/etc/laurel" \
+                   "pack/${package}/doc/selinux"
+
+          install -m755 target/release/laurel "pack/${package}/bin/"
+          install -m755 target/release/laurel2audit "pack/${package}/bin/"
+          install -m644 etc/audit/plugins.d/laurel.conf "pack/${package}/etc/audit/plugins.d/"
+          install -m644 etc/laurel/config.toml "pack/${package}/etc/laurel/"
+          install -m644 ./*.md "pack/${package}/doc/"
+          install -m644 contrib/selinux/laurel.te "pack/${package}/doc/selinux/"
+
+          tar -C pack -czf "pack/${package}.tar.gz" "${package}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: selinux-tarball
+          path: pack/*-selinux.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+
+  release-selinux:
+    needs: build-test-selinux
+    if: ${{ startsWith(github.ref, 'refs/tags/') && endsWith(github.ref_name, '-selinux') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate SELinux release tag
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | \
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          expected="v${version}-selinux"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "SELinux release tag must be ${expected}, got ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: selinux-tarball
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: "Laurel ${{ github.ref_name }}"
+          files: laurel-*-selinux.tar.gz
+          fail_on_unmatched_files: true
+          draft: true
+          prerelease: false
