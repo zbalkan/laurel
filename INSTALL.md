@@ -66,7 +66,7 @@ $ sudo install -m755 laurel /usr/local/sbin/laurel
     $ sudo useradd --system --home-dir /var/log/laurel --create-home _laurel
     ```
 - Configure _LAUREL_: Copy the provided annotated [example](etc/laurel/config.toml) to `/etc/laurel/config.toml` and customize it.
-- Register _LAUREL_: as an _auditd_ plugin: Depending on your _auditd_ version, copy the provided [example](etc/audit/plugins.d/laurel.conf) to
+- Register _LAUREL_ as an _auditd_ plugin: Depending on your _auditd_ version, copy the provided [example](etc/audit/plugins.d/laurel.conf) to
     - `/etc/audit/plugins.d/laurel.conf` for _auditd_ 3
     - `/etc/audisp/plugins.d/laurel.conf` for _auditd_ 2
 - If you are running SELinux, compile the provided policy and install it into the running kernel:
