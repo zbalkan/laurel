@@ -92,9 +92,9 @@ jobs:
     container: rockylinux:9
     steps:
       - uses: actions/checkout@v6
-      - name: Enable CRB and install dependencies
+      - name: Enable CRB/EPEL and install dependencies
         run: |
-          dnf -y install dnf-plugins-core
+          dnf -y install dnf-plugins-core epel-release
           dnf config-manager --set-enabled crb
           dnf -y install \
             curl gcc gcc-c++ make clang-devel libacl-devel \
