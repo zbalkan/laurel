@@ -1075,7 +1075,8 @@ impl<'a, 'ev> Coalesce<'a, 'ev> {
         self.state.done.insert(EventKey(ev.node.clone(), ev.id));
 
         self.transform_event(&mut ev);
-        self.selinux.process(&mut ev);
+        self.selinux
+            .process(&mut ev, self.settings.enrich_prefix.as_deref());
         (self.emit_fn)(&ev)
     }
 

@@ -332,8 +332,8 @@ mod enabled {
         fn open_policy(path: &std::path::Path) -> Result<Self, SelinuxError> {
             use std::os::unix::ffi::OsStrExt;
 
-            let path = CString::new(path.as_os_str().as_bytes())
-                .map_err(|_| SelinuxError::InteriorNul)?;
+            let path =
+                CString::new(path.as_os_str().as_bytes()).map_err(|_| SelinuxError::InteriorNul)?;
             let mut raw = ptr::null_mut();
 
             // SAFETY: `raw` is writable output storage and `path` is a valid
@@ -364,10 +364,10 @@ mod enabled {
                 return Ok(result);
             }
 
-            let scontext = CString::new(query.scontext.as_slice())
-                .map_err(|_| SelinuxError::InteriorNul)?;
-            let tcontext = CString::new(query.tcontext.as_slice())
-                .map_err(|_| SelinuxError::InteriorNul)?;
+            let scontext =
+                CString::new(query.scontext.as_slice()).map_err(|_| SelinuxError::InteriorNul)?;
+            let tcontext =
+                CString::new(query.tcontext.as_slice()).map_err(|_| SelinuxError::InteriorNul)?;
             let tclass =
                 CString::new(query.tclass.as_slice()).map_err(|_| SelinuxError::InteriorNul)?;
             let permissions = query
@@ -470,8 +470,7 @@ mod enabled {
     fn attach_result(body: &mut Body<'_>, result: &WhyResult, prefix: Option<&str>) {
         let why_key = enrichment_key(prefix, "selinux_why", "SELINUX_WHY");
         let detail_key = enrichment_key(prefix, "selinux_why_detail", "SELINUX_WHY_DETAIL");
-        let booleans_key =
-            enrichment_key(prefix, "selinux_why_booleans", "SELINUX_WHY_BOOLEANS");
+        let booleans_key = enrichment_key(prefix, "selinux_why_booleans", "SELINUX_WHY_BOOLEANS");
 
         body.retain(|(key, _)| key != &why_key && key != &detail_key && key != &booleans_key);
         body.push((why_key, result.reason.as_str().into()));
@@ -698,10 +697,7 @@ finally:
         fn extracts_and_normalizes_selinux_avc() {
             let query = extract_query(&selinux_body()).expect("SELinux AVC");
             assert_eq!(query.tclass, b"file");
-            assert_eq!(
-                query.permissions,
-                vec![b"read".to_vec(), b"write".to_vec()]
-            );
+            assert_eq!(query.permissions, vec![b"read".to_vec(), b"write".to_vec()]);
         }
 
         #[test]
