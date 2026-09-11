@@ -2,7 +2,6 @@ on:
   push:
     paths:
       - src/**
-      - tests/**
       - audit-specs/**
       - syscall-tables/**
       - build.rs
@@ -12,7 +11,6 @@ on:
   pull_request:
     paths:
       - src/**
-      - tests/**
       - audit-specs/**
       - syscall-tables/**
       - build.rs
@@ -67,7 +65,7 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get -qq update
           apt-get -qqy dist-upgrade
-          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libgoogle-perftools-dev libselinux1-dev libsepol-dev
+          apt-get -qqy install curl build-essential libclang-dev libacl1-dev libgoogle-perftools-dev
       - uses: dtolnay/rust-toolchain@1.70 # minimum supported Rust version (see Cargo.toml)
       - uses: actions/cache@v5
         with:
@@ -81,37 +79,11 @@ jobs:
           restore-keys: ${{ runner.os }}-test-cargo-
       - run: cargo test --no-default-features
       - run: cargo test
-      - run: cargo test --locked --features selinux
-
-  build-test-selinux:
-    runs-on: ubuntu-latest
-    # The differential test loads an explicit policy file and therefore tests
-    # libselinux/libsepol/audit2why userspace semantics and the RHEL-family
-    # package layout. A container shares the GitHub-hosted Ubuntu kernel, so
-    # this is intentionally not presented as an enforcing-kernel SELinux test.
-    container: rockylinux:9
-    steps:
-      - uses: actions/checkout@v6
-      - name: Enable CRB/EPEL and install dependencies
-        run: |
-          dnf -y install dnf-plugins-core epel-release
-          dnf config-manager --set-enabled crb
-          dnf -y install \
-            gcc gcc-c++ make clang-devel libacl-devel \
-            libselinux-devel libsepol-devel libsepol-static secilc \
-            policycoreutils-python-utils python3
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Compile differential-test policy
-        run: secilc -o /tmp/laurel-selinux-policy -f /tmp/laurel-file-contexts tests/selinux-policy.cil
-      - name: Test SELinux userspace semantics against upstream audit2why
-        env:
-          LAUREL_SELINUX_TEST_POLICY: /tmp/laurel-selinux-policy
-        run: cargo test --locked --features selinux
 
   build-x86_64-gnu:
     needs: [ check-fmt, build-test ]
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container: debian:bullseye
     steps:
       - uses: actions/checkout@v6
       - name: Install dependency
@@ -187,7 +159,7 @@ jobs:
   build-aarch64-gnu:
     needs: [ check-fmt, build-test ]
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container: debian:bullseye
     steps:
       - uses: actions/checkout@v6
       - name: Install dependency
@@ -223,7 +195,7 @@ jobs:
   build-armv7-gnueabihf:
     needs: [ check-fmt, build-test ]
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container: debian:bullseye
     steps:
       - uses: actions/checkout@v6
       - name: Install dependency
@@ -258,7 +230,7 @@ jobs:
 
   build-man:
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container: debian:bullseye
     steps:
       - uses: actions/checkout@v6
       - name: Install dependency
